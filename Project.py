@@ -1,6 +1,8 @@
 from OpenGL.GL import *
 from OpenGL.GLUT import *
 from OpenGL.GLU import *
+import random
+import time  # Add time module for speed progression
 
 # Window size
 W_Width, W_Height = 800, 600
@@ -9,8 +11,19 @@ W_Width, W_Height = 800, 600
 camera_x, camera_y, camera_z = 0, -400, 200
 look_x, look_y, look_z = 0, 0, 0
 
+# Border constants
+X_MIN, X_MAX = -250, 250
+Y_MIN, Y_MAX = -1000, 1000
+Z_MIN, Z_MAX = 0, 200
+
 # Player movement variables
 player_speed = 2.0
+initial_speed = 2.0  # Store initial speed for reference
+max_speed = 8.0  # Maximum speed limit
+speed_increase_interval = 10.0  # Increase speed every 10 seconds
+speed_increase_amount = 0.5  # How much to increase speed each time
+game_start_time = 0.0  # Track when game started
+last_speed_increase_time = 0.0  # Track last speed increase
 world_offset = 0.0  # How far the world has moved backward
 player_x = 0.0  # Player's left-right position on the road
 player_z = 50.0  # Player's vertical position (for jumping)
@@ -18,12 +31,27 @@ player_velocity_z = 0.0  # Player's vertical velocity
 is_jumping = False
 ground_level = 50.0  # Ground level for the player
 jump_strength = 15.0  # How strong the jump is
-gravity = -0.8  # Gravity pulling player down
+gravity = -0.5  # Gravity pulling player down
 
-# Obstacles
-obstacles = []  # List to store obstacles
+# Game state variables
+game_over = False
+game_won = False
+score = 0
+game_paused = False
+super_power_active = False
+bullets = []
+move_speed = 2.0
+player_lives = 3  # Player starts with 3 lives
+bullet_ammo = 0  # Player starts with 0 bullets
+max_ammo = 5  # Maximum bullets player can carry
+
+# Obstacles - Three types
+power_ups = []  # Power-ups that give benefits when collected
+ground_obstacles = []  # Low obstacles that must be jumped over
+full_obstacles = []  # Tall obstacles that must be avoided by moving left/right
+obstacles = []  # Original obstacle system for compatibility
 obstacle_spawn_timer = 0
-obstacle_spawn_interval = 90  # Spawn obstacle every 90 frames (slower spawning)
+obstacle_spawn_interval = 90  # Spawn obstacle every 90 frames
 
 def drawPlayer():
     """
@@ -88,9 +116,10 @@ def keyboardListener(key, x, y):
     W/S - Move camera forward/backward
     A/D - Move camera left/right
     Q/E - Move camera up/down
-    Space - Jump
+    Space - Pause/Unpause game
+    J - Jump
     """
-    global camera_x, camera_y, camera_z, player_x, is_jumping, player_velocity_z
+    global camera_x, camera_y, camera_z, player_x, is_jumping, player_velocity_z, game_paused
     
     if key == b'w':  # Move camera forward
         camera_y += 20
@@ -110,15 +139,47 @@ def keyboardListener(key, x, y):
     elif key == b'e':  # Move camera down
         camera_z -= 20
         print("Camera moved down")
-    elif key == b'r':  # Reset camera
-        camera_x, camera_y, camera_z = 0, -400, 200
-        player_x = 0.0  # Also reset player position
-        print("Camera and player reset")
-    elif key == b' ':  # Space key for jumping
-        if not is_jumping:  # Can only jump if not already jumping
-            is_jumping = True
-            player_velocity_z = jump_strength
-            print("Player jumped!")
+    elif key == b'r':  # Reset camera or restart game
+        if game_over or game_won:
+            restart_game()
+        else:
+            camera_x, camera_y, camera_z = 0, -400, 200
+            player_x = 0.0  # Also reset player position
+            print("Camera and player reset")
+    elif key == b' ':  # Space key for pausing/unpausing
+        game_paused = not game_paused
+        if game_paused:
+            print("Game PAUSED - Press SPACE to resume")
+        else:
+            print("Game RESUMED")
+    elif key == b'j':  # J key for jumping (moved from space)
+        if not game_paused and not game_over and not game_won:
+            if super_power_active:
+                # Shoot bullet
+                bullets.append({
+                    'x': player_x,
+                    'y': -250,  # Start at player position
+                    'z': player_z + 10,  # Slightly above player
+                    'active': True
+                })
+                print("Bullet fired!")
+            elif not is_jumping:  # Jump if not in super power mode
+                is_jumping = True
+                player_velocity_z = jump_strength
+                print("Player jumped!")
+    elif key == b'u':  # U key to force update all obstacle positions
+        # forceUpdateAllObstaclePositions()
+        print("All obstacles forcefully repositioned!")
+    elif key == b'i':  # I key to reinitialize obstacles completely
+        print("All obstacles reinitialized!")
+    elif key == b'r':  # R key to restart game
+        restart_game()
+    elif key == b'p':  # P key to pause/unpause
+        game_paused = not game_paused
+        if game_paused:
+            print("Game paused")
+        else:
+            print("Game resumed")
     
     glutPostRedisplay()
 
@@ -130,28 +191,41 @@ def specialKeyListener(key, x, y):
     
     if key == GLUT_KEY_LEFT:  # Move player left
         player_x -= 15
-        # Keep player within road bounds (approximate road width)
-        if player_x < -200:
-            player_x = -200
+        # Keep player within border bounds
+        if player_x < X_MIN + 20:  # Add some padding from the border
+            player_x = X_MIN + 20
         print("Player moved left")
     elif key == GLUT_KEY_RIGHT:  # Move player right
         player_x += 15
-        # Keep player within road bounds (approximate road width)
-        if player_x > 200:
-            player_x = 200
+        # Keep player within border bounds
+        if player_x > X_MAX - 20:  # Add some padding from the border
+            player_x = X_MAX - 20
         print("Player moved right")
     
     glutPostRedisplay()
+
+  
 
 def animate():
     """
     Animation function to move the world forward (player moving backward effect)
     Also handles player jumping physics and obstacle management
     """
-    global world_offset, player_z, player_velocity_z, is_jumping
+    global world_offset, player_z, player_velocity_z, is_jumping, score
     
-    # Move world forward
+    # Don't update game if paused, game over, or won
+    if game_paused or game_over or game_won:
+        glutPostRedisplay()
+        return
+    
+    # Update speed progression based on time
+    update_speed_progression()
+    
+    # Move world forward with current speed
     world_offset -= player_speed  # Move world forward to simulate backward movement
+    
+    # Increase score based on distance traveled
+    score += int(player_speed * 0.1)  # Score increases faster with higher speed
     
     # Handle jumping physics
     if is_jumping:
@@ -172,6 +246,38 @@ def animate():
     checkCollisions()
     
     glutPostRedisplay()
+
+def update_speed_progression():
+    """
+    Update player speed based on elapsed time
+    Speed increases every 10 seconds up to a maximum limit
+    """
+    global player_speed, last_speed_increase_time, move_speed
+    
+    if game_paused or game_over or game_won:
+        return  # Don't update speed when game is paused or ended
+    
+    current_time = time.time()
+    elapsed_time = current_time - game_start_time
+    
+    # Check if it's time to increase speed
+    if current_time - last_speed_increase_time >= speed_increase_interval:
+        if player_speed < max_speed:
+            old_speed = player_speed
+            player_speed = min(player_speed + speed_increase_amount, max_speed)
+            move_speed = player_speed  # Keep move_speed in sync
+            last_speed_increase_time = current_time
+            
+            print(f"Speed increased! Time: {elapsed_time:.1f}s, Speed: {old_speed:.1f} -> {player_speed:.1f}")
+        else:
+            # Reset the timer even at max speed to avoid constant checking
+            last_speed_increase_time = current_time
+    
+    # Also update obstacle spawn rate based on speed (faster = more obstacles)
+    global obstacle_spawn_interval
+    base_spawn_interval = 90
+    speed_multiplier = player_speed / initial_speed
+    obstacle_spawn_interval = max(int(base_spawn_interval / speed_multiplier), 30)  # Minimum 30 frames
 
 def drawBackground():
     glClearColor(0.05, 0.05, 0.15, 1.0)  # Night sky color
@@ -239,18 +345,27 @@ def drawRoadMarkings():
         glVertex2f(-center_width, y_end)    # Top left
         glEnd()
 
+
+
+
+
 def createObstacle(obstacle_type, x_position):
     """
     Create different types of obstacles
-    obstacle_type: 'low' (jump over) or 'tall' (move left/right)
+    obstacle_type: 'low' (jump over), 'tall' (move left/right), or 'power' (collect)
     x_position: x position on the road (-150 to 150)
     """
     obstacle = {
         'type': obstacle_type,
         'x': x_position,
-        'y': 600,  # Start closer to player for visibility
+        'y': 400 - world_offset,  # Spawn ahead of current world position
         'active': True
     }
+    
+    # Add subtype for power-ups
+    if obstacle_type == 'power':
+        obstacle['subtype'] = random.choice(['green', 'yellow', 'silver'])
+    
     return obstacle
 
 def drawObstacles():
@@ -268,7 +383,7 @@ def drawObstacles():
             # Low obstacle - jump over (red color)
             glColor3f(1.0, 0.0, 0.0)  # Red
             glTranslatef(0, 0, 25)  # Raise slightly above ground
-            glScalef(40, 60, 30)  # Wide, long, low
+            glScalef(40, 40, 30)  # Wide, long, low
             glutSolidCube(1)
         elif obstacle['type'] == 'tall':
             # Tall obstacle - move left/right (blue color)
@@ -276,15 +391,30 @@ def drawObstacles():
             glTranslatef(0, 0, 80)  # Raise high above ground
             glScalef(40, 60, 120)  # Wide, long, tall
             glutSolidCube(1)
+        elif obstacle['type'] == 'power':
+            # Power-up with different colors based on subtype
+            if 'subtype' in obstacle:
+                if obstacle['subtype'] == 'green':
+                    glColor3f(0.0, 1.0, 0.0)  # Green for score boost
+                elif obstacle['subtype'] == 'yellow':
+                    glColor3f(1.0, 1.0, 0.0)  # Yellow for ammo
+                elif obstacle['subtype'] == 'silver':
+                    glColor3f(0.8, 0.8, 0.8)  # Silver for extra life
+                else:
+                    glColor3f(0.0, 1.0, 0.0)  # Default green
+            else:
+                glColor3f(0.0, 1.0, 0.0)  # Default green for old system
             
-        glPopMatrix()
+            glTranslatef(0, 0, 20)    # Slightly above ground
+            glScalef(20, 20, 20)      # Small cube
+            glutSolidCube(1)
+        glPopMatrix()  # Move this outside the elif block
 
 def spawnObstacles():
     """
     Spawn new obstacles periodically at random positions across the road
     """
     global obstacle_spawn_timer
-    import random
     
     obstacle_spawn_timer += 1
     
@@ -292,7 +422,7 @@ def spawnObstacles():
         obstacle_spawn_timer = 0
         
         # Randomly choose obstacle type
-        obstacle_type = random.choice(['low', 'tall'])
+        obstacle_type = random.choice(['low', 'tall','power'])
         
         # Random x position across the full width of the road
         # Road width goes from approximately -200 to +200 at player level
@@ -313,7 +443,7 @@ def updateObstacles():
     for obstacle in obstacles:
         # Mark obstacles for removal if they have passed the player
         # Player is at y = -250, so remove obstacles that are well behind
-        if obstacle['y'] + world_offset < -400:  # Remove when well past player
+        if obstacle['y'] + world_offset < -500:  # Remove when well past player
             obstacles_to_remove.append(obstacle)
     
     # Remove old obstacles
@@ -324,8 +454,9 @@ def updateObstacles():
 
 def checkCollisions():
     """
-    Check if player collides with any obstacles
+    Check if player collides with any obstacles (simplified version)
     """
+    global score, player_lives, bullet_ammo
     player_size = 30  # Approximate player size
     
     for obstacle in obstacles:
@@ -337,9 +468,9 @@ def checkCollisions():
         obs_y = obstacle['y'] + world_offset
         
         # Check if obstacle is near player's y position
-        if abs(obs_y - (-250)) < 50:  # Player is at y = -250
+        if abs(obs_y - (-250)) < 30:  # Player is at y = -250
             # Check x collision
-            if abs(player_x - obs_x) < 50:  # Close in x direction
+            if abs(player_x - obs_x) < 30:  # Close in x direction
                 if obstacle['type'] == 'low':
                     # Low obstacle - check if player is jumping high enough
                     if player_z < 80:  # Not jumping high enough
@@ -350,6 +481,87 @@ def checkCollisions():
                     if player_z <= ground_level + 10:  # On or near ground
                         print("Hit tall obstacle! Should have moved left/right!")
                         obstacle['active'] = False
+                elif obstacle['type'] == 'power':
+                    # Power-up - collect it based on type
+                    obstacle['active'] = False
+                    print("Collected power-up!")
+                    
+                    # Check if obstacle has a subtype (for the old system power-ups)
+                    if hasattr(obstacle, 'subtype') or 'subtype' in obstacle:
+                        if obstacle['subtype'] == 'green':
+                            # Green power-up increases score
+                            score += 20
+                            print("Collected GREEN power-up! +20 score!")
+                        elif obstacle['subtype'] == 'silver':
+                            # Silver power-up gives extra life
+                            player_lives += 1
+                            print(f"Collected SILVER power-up! Extra life! Lives: {player_lives}")
+                        elif obstacle['subtype'] == 'yellow':
+                            # Yellow power-up gives ammo (max 5 bullets)
+                            if bullet_ammo < 5:
+                                bullet_ammo += 1
+                                print(f"Collected YELLOW power-up! Ammo: {bullet_ammo}/5")
+                            else:
+                                print("Collected YELLOW power-up! Already at max ammo (5/5)")
+
+
+        
+
+def restart_game():
+    """
+    Restart the game to initial state
+    """
+    global game_over, game_won, score, player_x, player_z, super_power_active, bullets
+    global world_offset, player_velocity_z, is_jumping, obstacles
+    global player_speed, game_start_time, last_speed_increase_time, move_speed, game_paused
+    
+    game_over = False
+    game_won = False
+    score = 0
+    player_x = 0.0  # Reset player position
+    player_z = ground_level  # Reset to ground level
+    player_velocity_z = 0.0
+    is_jumping = False
+    world_offset = 0.0  # Reset world movement
+    super_power_active = False
+    bullets = []
+    obstacles = []  # Reset old-style obstacles
+    game_paused = False  # Unpause game on restart
+    
+    # Reset speed progression
+    player_speed = initial_speed
+    move_speed = initial_speed
+    game_start_time = time.time()  # Reset game timer
+    last_speed_increase_time = game_start_time
+    
+    # Reinitialize all obstacles
+
+    print(f"Game restarted! Starting speed: {player_speed}")
+
+def check_super_power_activation():
+    """
+    Check if super power should be activated (e.g., after collecting certain power-ups)
+    """
+    global super_power_active, score
+    
+    # Activate super power every 100 points
+    if score > 0 and score % 100 == 0 and not super_power_active:
+        super_power_active = True
+        print("Super power activated!")
+
+
+def draw_text(x, y, text):
+    """
+    Draw text on screen (simplified version for console output)
+    """
+    # For now, just print to console since OpenGL text rendering is complex
+    if text.startswith("Score:"):
+        pass  # Don't spam score updates
+    else:
+        print(text)
+
+
+    
 
 def drawBuilding(base_left, base_right, top_left, top_right, rows=6, color=(0.5, 0.7, 0.9), window_color=(0.85, 0.92, 1.0)):
     """
@@ -430,6 +642,53 @@ def drawBuildings():
             drawBuilding(adj_base_left, adj_base_right, adj_top_left, adj_top_right, 
                         rows, color, (0.9, 0.9, 0.9))
 
+def drawBorders():
+    """
+    Draw colorful borders using lines to define the game boundaries
+    Players cannot go beyond these borders
+    """
+    # Set border color (bright cyan/blue) and line width
+    glColor3f(0.0, 1.0, 1.0)  # Cyan color for visibility
+    glLineWidth(8)  # Thicker lines for better visibility
+    
+    glBegin(GL_LINES)
+    
+    # Left border - extends along the entire visible road length
+    for y_offset in range(-10, 11):  # Multiple segments for continuous border
+        y_start = Y_MIN + y_offset * 200 + (world_offset % 200)
+        y_end = y_start + 200
+        
+        # Left border line
+        glVertex3f(X_MIN, y_start, Z_MIN)
+        glVertex3f(X_MIN, y_start, Z_MAX)
+        
+        glVertex3f(X_MIN, y_start, Z_MAX)
+        glVertex3f(X_MIN, y_end, Z_MAX)
+        
+        glVertex3f(X_MIN, y_end, Z_MAX)
+        glVertex3f(X_MIN, y_end, Z_MIN)
+        
+        glVertex3f(X_MIN, y_end, Z_MIN)
+        glVertex3f(X_MIN, y_start, Z_MIN)
+        
+        # Right border line  
+        glVertex3f(X_MAX, y_start, Z_MIN)
+        glVertex3f(X_MAX, y_start, Z_MAX)
+        
+        glVertex3f(X_MAX, y_start, Z_MAX)
+        glVertex3f(X_MAX, y_end, Z_MAX)
+        
+        glVertex3f(X_MAX, y_end, Z_MAX)
+        glVertex3f(X_MAX, y_end, Z_MIN)
+        
+        glVertex3f(X_MAX, y_end, Z_MIN)
+        glVertex3f(X_MAX, y_start, Z_MIN)
+    
+    glEnd()
+    
+    # Reset line width to default
+    glLineWidth(1)
+
 def display():
     drawBackground()
     glMatrixMode(GL_MODELVIEW)
@@ -447,14 +706,31 @@ def display():
     drawRoad()
     # Draw road markings for animation visibility
     drawRoadMarkings()
-    # Draw multiple buildings for infinite effect
-    drawBuildings()
+    # Draw borders instead of buildings
+    drawBorders()
     
-    # Draw obstacles
+    
+    # Draw old-style obstacles for compatibility
     drawObstacles()
+    
     
     # Draw 3D player in middle of road (player stays at center)
     drawPlayer()
+    
+    # Display game state messages
+    if game_over:
+        draw_text(400, 400, "GAME OVER! Press R to restart")
+    elif game_won:
+        draw_text(400, 400, "YOU WON! Press R to play again")
+    elif game_paused:
+        draw_text(400, 400, "PAUSED - Press P to resume")
+    
+    if super_power_active:
+        draw_text(10, 740, "SUPER POWER ACTIVE! Press SPACE to shoot")
+    
+
+   # Only print every 50 points
+    print(f"Score: {score}")
     
     glutSwapBuffers()
 
@@ -464,12 +740,19 @@ def init():
     gluPerspective(60, W_Width/W_Height, 0.1, 1000)  # 3D perspective projection
 
 def main():
+    global game_start_time, last_speed_increase_time
+    
     glutInit()
     glutInitWindowSize(W_Width, W_Height)
     glutInitWindowPosition(100, 100)
     glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGB | GLUT_DEPTH)  # Added depth buffer
     glutCreateWindow(b"OpenGL City Draft")
     init()
+    
+    # Initialize game timing
+    game_start_time = time.time()
+    last_speed_increase_time = game_start_time
+
     glutDisplayFunc(display)
     glutKeyboardFunc(keyboardListener)
     glutSpecialFunc(specialKeyListener)
