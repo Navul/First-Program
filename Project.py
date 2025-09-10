@@ -39,6 +39,8 @@ game_won = False
 score = 0
 game_paused = False
 super_power_active = False
+silver_power_count = 0  # Number of silver power-ups player has (max 3)
+max_silver_power = 3  # Maximum silver power-ups player can have
 bullets = []
 move_speed = 2.0
 player_lives = 3  # Player starts with 3 lives
@@ -62,6 +64,17 @@ ghost_awakened = False  # Whether ghost has been permanently awakened by low obs
 # Cheat mode variables
 cheat_mode = False  # Cheat mode toggle
 
+# UFO variables
+ufo_x = 0.0  # UFO's x position
+ufo_y = 100.0  # UFO's y position (above player)
+ufo_z = 150.0  # UFO's height (in the sky)
+ufo_active = False  # Whether UFO is currently active
+ufo_spawn_timer = 0  # Timer for UFO spawning
+ufo_spawn_interval = 600  # UFO appears every 10 seconds (600 frames at 60fps)
+ufo_bullets = []  # List of UFO bullets
+ufo_bullet_timer = 0  # Timer for UFO shooting
+ufo_bullet_interval = 120  # UFO shoots every 2 seconds when active
+
 # Obstacles - Three types
 power_ups = []  # Power-ups that give benefits when collected
 ground_obstacles = []  # Low obstacles that must be jumped over
@@ -83,6 +96,21 @@ class CBullet:
             
             # Deactivate bullets that go too far ahead
             if self.loc[1] > 200:  # Remove when bullets get ahead of visible area
+                self.active = False
+
+class CUFOBullet:
+    def __init__(self, x, y, z):
+        self.loc = [x, y, z]  # Start at UFO position [x, height, forward]
+        self.dir = [0, -1, 0]  # Move downward (negative Y direction = downward)
+        self.active = True
+         
+    def update_position(self):
+        if self.active:
+            # UFO bullets move downward toward ground
+            self.loc[1] += self.dir[1] * 3  # Move down at speed 3
+            
+            # Deactivate bullets that hit the ground
+            if self.loc[1] < 0:  # Remove when bullets hit ground level
                 self.active = False
 
 def drawPlayer():
@@ -140,6 +168,58 @@ def drawPlayer():
     glutSolidCube(1)
     glPopMatrix()
     
+    glPopMatrix()
+
+def drawUFO():
+    """
+    Draw a simple UFO using only allowed OpenGL functions
+    UFO consists of a main disc and a dome on top
+    """
+    if not ufo_active:
+        return
+        
+    glPushMatrix()
+    glTranslatef(ufo_x, ufo_z + world_offset, 25.0)  # Position UFO higher in the sky
+    
+    # UFO main disc (flattened cube)
+    glPushMatrix()
+    glColor3f(0.7, 0.7, 0.7)  # Metallic gray color
+    glScalef(6, 6, 1)  # Wide and flat like a disc
+    glutSolidCube(1)
+    glPopMatrix()
+    
+    # UFO dome (smaller cube on top)
+    glPushMatrix()
+    glColor3f(0.5, 0.8, 1.0)  # Light blue dome
+    glTranslatef(0, 0, 1.5)  # Position above the disc
+    glScalef(3, 3, 2)  # Smaller dome shape
+    glutSolidCube(1)
+    glPopMatrix()
+    
+    # UFO lights (small cubes around the disc)
+    for i in range(4):
+        glPushMatrix()
+        glRotatef(i * 90, 0, 0, 1)  # Rotate around Z-axis for each light
+        glTranslatef(4, 0, 0)  # Position light on edge of disc
+        glColor3f(1.0, 1.0, 0.0)  # Yellow light
+        glScalef(0.5, 0.5, 0.5)  # Small light
+        glutSolidCube(1)
+        glPopMatrix()
+    
+    glPopMatrix()
+
+def drawUFOBullet(bullet):
+    """
+    Draw UFO bullet using only allowed OpenGL functions
+    """
+    if not bullet.active:
+        return
+        
+    glPushMatrix()
+    glTranslatef(bullet.loc[0], bullet.loc[1] + world_offset, bullet.loc[2])
+    glColor3f(1.0, 0.0, 0.0)  # Red UFO bullet
+    glScalef(5, 5, 10)  # Elongated bullet shape
+    glutSolidCube(1)
     glPopMatrix()
 
 def drawGhost():
@@ -318,6 +398,7 @@ def specialKeyListener(key, x, y):
     
     glutPostRedisplay()
 
+<<<<<<< HEAD
 def auto_dodge_obstacles():
     """
     Auto-dodge functionality for cheat mode
@@ -381,6 +462,72 @@ def auto_dodge_obstacles():
                                 print("Cheat mode: Auto-dodged right!")
 
   
+=======
+def updateUFO():
+    """
+    Update UFO behavior: spawning, movement, and shooting
+    """
+    global ufo_active, ufo_spawn_timer, ufo_x, ufo_z, ufo_bullet_timer, game_over
+    
+    # UFO spawning logic
+    ufo_spawn_timer += 1
+    
+    if not ufo_active and ufo_spawn_timer >= ufo_spawn_interval:
+        # Spawn UFO at random position
+        ufo_active = True
+        ufo_x = random.uniform(X_MIN + 5, X_MAX - 5)  # Random x position across road
+        ufo_z = -100  # Start ahead of player (in front)
+        ufo_spawn_timer = 0
+        print("UFO appeared in the sky!")
+    
+    if ufo_active:
+        # Move UFO slowly toward player
+        ufo_z += 3  # Move toward player
+        
+        # UFO shooting logic
+        ufo_bullet_timer += 1
+        if ufo_bullet_timer >= ufo_bullet_interval:
+            # UFO shoots at player (bullet starts at UFO position)
+            ufo_bullets.append(CUFOBullet(ufo_x, 25.0, ufo_z))  # Start at UFO height
+            ufo_bullet_timer = 0
+            print("UFO fired a bullet!")
+        
+        # Remove UFO when it goes too far behind player
+        if ufo_z > 200:
+            ufo_active = False
+            print("UFO disappeared")
+    
+    # Update UFO bullets
+    for bullet in ufo_bullets[:]:  # Use slice to avoid modification during iteration
+        if bullet.active:
+            bullet.update_position()
+            
+            # Check collision with player
+            dx = bullet.loc[0] - player_x
+            dy = bullet.loc[1] - (-250)  # Player is at y = -250
+            dz = bullet.loc[2] - player_z
+            distance = (dx**2 + dy**2 + dz**2)**0.5
+            
+            if distance < 30:  # Collision threshold
+                if silver_power_count > 0:
+                    print(f"UFO bullet hit but PROTECTED by silver power! ({silver_power_count-1} remaining)")
+                    score += 15  # Bonus points for surviving UFO attack with silver power
+                    silver_power_count -= 1  # Use one silver power
+                    bullet.active = False
+                else:
+                    print("UFO bullet hit player! GAME OVER!")
+                    print("================================================")
+                    print("                GAME OVER!")
+                    print(f"              FINAL SCORE: {score}")
+                    print("      Press 'R' to restart the game")
+                    print("================================================")
+                    game_over = True
+                    bullet.active = False
+        
+        # Remove inactive bullets
+        if not bullet.active:
+            ufo_bullets.remove(bullet)
+>>>>>>> f3e477cf980c6a43f5c9188fbf9ef8a0707a88d4
 
 def animate():
     """
@@ -484,6 +631,9 @@ def animate():
         elif not ghost_hidden:
             # Keep ghost close during first 3 seconds
             ghost_hide_timer = current_time - game_start_time
+    
+    # Handle UFO system
+    updateUFO()
     
     # Handle obstacles
     spawnObstacles()
@@ -787,8 +937,12 @@ def checkCollisions():
     """
     Check if player collides with any obstacles (simplified version)
     """
+<<<<<<< HEAD
     global score, player_lives, bullet_ammo, game_over, low_obstacle_hits
     global player_stunned, ghost_hidden, ghost_y_offset, ghost_target_y_offset, ghost_awakened  # Add all needed ghost variables
+=======
+    global score, player_lives, bullet_ammo, game_over, silver_power_count
+>>>>>>> f3e477cf980c6a43f5c9188fbf9ef8a0707a88d4
     player_size = 30  # Approximate player size
     
     for obstacle in obstacles:
@@ -806,6 +960,7 @@ def checkCollisions():
                 if obstacle['type'] == 'low':
                     # Low obstacle - check if player is jumping high enough
                     if player_z < 80:  # Not jumping high enough
+<<<<<<< HEAD
                         global low_obstacle_hits, ghost_hidden, ghost_y_offset, ghost_target_y_offset, ghost_awakened
                         low_obstacle_hits += 1
                         obstacle['active'] = False
@@ -830,6 +985,39 @@ def checkCollisions():
                         print("Hit tall obstacle! Player stunned, ghost is approaching...")
                         player_stunned = True  # Stun player, don't end game yet
                         obstacle['active'] = False
+=======
+                        if silver_power_count > 0:
+                            print(f"Hit low obstacle but PROTECTED by silver power! ({silver_power_count-1} remaining)")
+                            score += 10  # Bonus points for surviving with silver power
+                            silver_power_count -= 1  # Use one silver power
+                            obstacle['active'] = False
+                        else:
+                            print("Hit low obstacle! Should have jumped!")
+                            print("================================================")
+                            print("                GAME OVER!")
+                            print(f"              FINAL SCORE: {score}")
+                            print("      Press 'R' to restart the game")
+                            print("================================================")
+                            game_over = True
+                            obstacle['active'] = False
+                elif obstacle['type'] == 'tall':
+                    # Tall obstacle - check if player is on ground (not jumping away)
+                    if player_z <= ground_level + 10:  # On or near ground
+                        if silver_power_count > 0:
+                            print(f"Hit tall obstacle but PROTECTED by silver power! ({silver_power_count-1} remaining)")
+                            score += 10  # Bonus points for surviving with silver power
+                            silver_power_count -= 1  # Use one silver power
+                            obstacle['active'] = False
+                        else:
+                            print("Hit tall obstacle! Should have moved left/right!")
+                            print("================================================")
+                            print("                GAME OVER!")
+                            print(f"              FINAL SCORE: {score}")
+                            print("      Press 'R' to restart the game")
+                            print("================================================")
+                            game_over = True
+                            obstacle['active'] = False
+>>>>>>> f3e477cf980c6a43f5c9188fbf9ef8a0707a88d4
                 elif obstacle['type'] == 'power':
                     # Power-up - collect it based on type
                     obstacle['active'] = False
@@ -840,14 +1028,24 @@ def checkCollisions():
                         if obstacle['subtype'] == 'green':
                             # Green power-up increases score
                             score += 20
-                            print("Collected GREEN power-up! +20 score!")
+                            print("========================================")
+                            print("COLLECTED GREEN POWER-UP! +20 SCORE!")
+                            print(f"CURRENT SCORE: {score}")
+                            print("========================================")
                         elif obstacle['subtype'] == 'silver':
-                            # Silver power-up gives extra life
-                          if player_lives<3:  
-                            player_lives += 1
-                            print(f"Collected SILVER power-up! Extra life! Lives: {player_lives}")
-                          else:
-                            print("Collected SILVER power-up! Already at max lives (3)")  
+                            # Silver power-up gives extra life AND protection power
+                            if player_lives < 3:  
+                                player_lives += 1
+                                print(f"Collected SILVER power-up! Extra life! Lives: {player_lives}")
+                            else:
+                                print("Collected SILVER power-up! Already at max lives (3)")
+                            
+                            # Add silver protection power (max 3)
+                            if silver_power_count < max_silver_power:
+                                silver_power_count += 1
+                                print(f"SILVER PROTECTION ADDED! Count: {silver_power_count}/{max_silver_power}")
+                            else:
+                                print(f"SILVER PROTECTION FULL! Already at max ({max_silver_power})")  
                         elif obstacle['subtype'] == 'yellow':
                             # Yellow power-up gives ammo (max 5 bullets)
                             if bullet_ammo < 5:
@@ -866,8 +1064,12 @@ def restart_game():
     global game_over, game_won, score, player_x, player_z, super_power_active, bullets
     global world_offset, player_velocity_z, is_jumping, obstacles
     global player_speed, game_start_time, last_speed_increase_time, move_speed, game_paused
+<<<<<<< HEAD
     global player_lives, bullet_ammo, player_stunned, low_obstacle_hits  # Add low_obstacle_hits
     global ghost_x, ghost_y_offset, ghost_hide_timer, ghost_hidden, ghost_target_y_offset, ghost_awakened  # Add ghost variables
+=======
+    global player_lives, bullet_ammo, silver_power_count
+>>>>>>> f3e477cf980c6a43f5c9188fbf9ef8a0707a88d4
     
     game_over = False
     game_won = False
@@ -878,6 +1080,7 @@ def restart_game():
     is_jumping = False
     world_offset = 0.0
     super_power_active = False
+    silver_power_count = 0  # Reset silver power count
     bullets = []  # Clear all bullets
     obstacles = []
     game_paused = False
@@ -900,7 +1103,12 @@ def restart_game():
     game_start_time = time.time()
     last_speed_increase_time = game_start_time
     
-    print(f"Game restarted! Lives: {player_lives}, Ammo: {bullet_ammo}/5")
+    print("================================================")
+    print("              GAME RESTARTED!")
+    print(f"           Score: {score} | Lives: {player_lives}")
+    print("     Collect GREEN obstacles for +20 score!")
+    print("     Use arrow keys to move, SPACE to jump")
+    print("================================================")
 
 def check_super_power_activation():
     """
@@ -1083,6 +1291,18 @@ def display():
     # Draw ghost chasing the player
     drawGhost()
     
+    # Draw UFO
+    drawUFO()
+    
+    # Draw UFO bullets
+    for bullet in ufo_bullets:
+        glPushMatrix()
+        glTranslatef(bullet.loc[0], bullet.loc[2] + world_offset, bullet.loc[1])
+        glColor3f(1.0, 0.0, 0.0)  # Red color for UFO bullets
+        glScalef(0.5, 0.5, 0.5)
+        glutSolidCube(1)
+        glPopMatrix()
+    
     # Display game state messages
     if game_over:
         draw_text(400, 400, "GAME OVER! Press R to restart")
@@ -1091,12 +1311,23 @@ def display():
     elif game_paused:
         draw_text(400, 400, "PAUSED - Press P to resume")
     
+<<<<<<< HEAD
     # Print status info periodically
     if score % 50 == 0 or bullet_ammo != getattr(display, 'last_ammo', 0):
         cheat_status = " | CHEAT MODE ON" if cheat_mode else ""
         ammo_display = "∞" if cheat_mode else f"{bullet_ammo}/5"
         print(f"Score: {score} | Lives: {player_lives} | Ammo: {ammo_display}{cheat_status}")
+=======
+    # Display silver power status when player has power-ups
+    if silver_power_count > 0:
+        draw_text(400, 500, f"SILVER PROTECTION: {silver_power_count}/{max_silver_power}")
+    
+    # Print status info more frequently
+    if score % 25 == 0 or bullet_ammo != getattr(display, 'last_ammo', 0) or score != getattr(display, 'last_score', 0):
+        print(f"Score: {score} | Lives: {player_lives} | Ammo: {bullet_ammo}/5 | Silver: {silver_power_count}/{max_silver_power}")
+>>>>>>> f3e477cf980c6a43f5c9188fbf9ef8a0707a88d4
         display.last_ammo = bullet_ammo
+        display.last_score = score
     
     glutSwapBuffers()
 
