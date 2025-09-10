@@ -134,7 +134,7 @@ def drawGhost():
     glTranslatef(ghost_x, -250 - 80, player_z)  # Same base position using ghost_x
     
     # Ghost head (white sphere)
-    glColor3f(1.0, 1.0, 1.0)  # Pure white for head
+    glColor3f(0.1, 0.1, 0.1)  # Black for head
     glTranslatef(0, 0, 55)  # Position above body
     glutSolidSphere(10, 15, 15)  # Slightly smaller than player head
     glPopMatrix()
@@ -142,10 +142,30 @@ def drawGhost():
     glPushMatrix()
     glTranslatef(ghost_x, -250 - 80, player_z)  # Same base position using ghost_x
     
+    # Left devil horn (dark red)
+    glColor3f(0.6, 0.1, 0.1)  # Dark red color for horn
+    glTranslatef(-6, 0, 59)   # Position on left side of head, above it
+    quad = gluNewQuadric()
+    gluCylinder(quad, 3, 0, 17, 12, 4)
+    glPopMatrix()
+    
+    glPushMatrix()
+    glTranslatef(ghost_x, -250 - 80, player_z)  # Same base position using ghost_x
+    
+    # Right devil horn (dark red)
+    glColor3f(0.6, 0.1, 0.1)  # Dark red color for horn
+    glTranslatef(6, 0, 59)    # Position on right side of head, above it
+    quad = gluNewQuadric()
+    gluCylinder(quad, 3, 0, 17, 12, 4)
+    glPopMatrix()
+    
+    glPushMatrix()
+    glTranslatef(ghost_x, -250 - 80, player_z)  # Same base position using ghost_x
+    
     # Ghost left arm (floating)
     glColor3f(0.8, 0.9, 1.0)  # Same color as body
-    glTranslatef(-12, 0, 20)  # Position to left side
-    glScalef(6, 6, 20)  # Scale to arm shape
+    glTranslatef(-12, 13, 37)  # Position to left side
+    glScalef(6, 35, 6)  # Scale to arm shape
     glutSolidCube(1)
     glPopMatrix()
     
@@ -154,8 +174,8 @@ def drawGhost():
     
     # Ghost right arm (floating)
     glColor3f(0.8, 0.9, 1.0)  # Same color as body
-    glTranslatef(12, 0, 20)  # Position to right side
-    glScalef(6, 6, 20)  # Scale to arm shape
+    glTranslatef(12, 13, 37)  # Position to right side
+    glScalef(6, 35, 6)  # Scale to arm shape
     glutSolidCube(1)
     glPopMatrix()
 
