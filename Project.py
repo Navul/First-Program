@@ -44,12 +44,23 @@ move_speed = 2.0
 player_lives = 3  # Player starts with 3 lives
 bullet_ammo = 0  # Player starts with 0 bullets
 max_ammo = 5  # Maximum bullets player can carry
+player_stunned = False  # Player is stunned by tall obstacle, can't move but game continues
+low_obstacle_hits = 0  # Track how many times player hit low obstacles
 shot_speed = 10  # Bullet movement speed
 player_pos = [0, 20, 0]
 
 # Ghost variables for chasing behavior
 ghost_x = 30.0  # Ghost's independent x position
 ghost_chase_speed = 1.0  # How fast ghost chases player
+ghost_y_offset = -80  # Ghost's y position offset from player (starts close)
+ghost_hide_timer = 0.0  # Timer to track when to hide ghost
+ghost_hidden = False  # Whether ghost has moved to hidden position
+ghost_retreat_speed = 5.0  # How fast ghost moves back (units per frame)
+ghost_target_y_offset = -80  # Target y position for ghost
+ghost_awakened = False  # Whether ghost has been permanently awakened by low obstacle hit
+
+# Cheat mode variables
+cheat_mode = False  # Cheat mode toggle
 
 # Obstacles - Three types
 power_ups = []  # Power-ups that give benefits when collected
@@ -94,7 +105,7 @@ def drawPlayer():
     glPushMatrix()
     glColor3f(0.8, 0.6, 0.4)  # Skin color
     glTranslatef(0, 0, 60)  # Position above body
-    glutSolidSphere(12, 20, 20)  # radius, slices, stacks
+    gluSphere(gluNewQuadric(), 12, 20, 20)  # radius, slices, stacks
     glPopMatrix()
     
     # Draw left arm
@@ -138,7 +149,7 @@ def drawGhost():
     """
     glPushMatrix()
     # Position ghost behind player using independent ghost_x position
-    glTranslatef(ghost_x, -250 - 80, player_z)  # Use ghost_x instead of player_x + 30
+    glTranslatef(ghost_x, -250 + ghost_y_offset, player_z)  # Use dynamic ghost_y_offset
     
     # Ghost body (semi-transparent white/light blue)
     glColor3f(0.8, 0.9, 1.0)  # Light blue-white color
@@ -148,16 +159,16 @@ def drawGhost():
     glPopMatrix()
     
     glPushMatrix()
-    glTranslatef(ghost_x, -250 - 80, player_z)  # Same base position using ghost_x
+    glTranslatef(ghost_x, -250 + ghost_y_offset, player_z)  # Same base position using dynamic offset
     
     # Ghost head (white sphere)
     glColor3f(0.1, 0.1, 0.1)  # Black for head
     glTranslatef(0, 0, 55)  # Position above body
-    glutSolidSphere(10, 15, 15)  # Slightly smaller than player head
+    gluSphere(gluNewQuadric(), 10, 15, 15)  # Slightly smaller than player head
     glPopMatrix()
     
     glPushMatrix()
-    glTranslatef(ghost_x, -250 - 80, player_z)  # Same base position using ghost_x
+    glTranslatef(ghost_x, -250 + ghost_y_offset, player_z)  # Same base position using dynamic offset
     
     # Left devil horn (dark red)
     glColor3f(0.6, 0.1, 0.1)  # Dark red color for horn
@@ -167,7 +178,7 @@ def drawGhost():
     glPopMatrix()
     
     glPushMatrix()
-    glTranslatef(ghost_x, -250 - 80, player_z)  # Same base position using ghost_x
+    glTranslatef(ghost_x, -250 + ghost_y_offset, player_z)  # Same base position using dynamic offset
     
     # Right devil horn (dark red)
     glColor3f(0.6, 0.1, 0.1)  # Dark red color for horn
@@ -177,7 +188,7 @@ def drawGhost():
     glPopMatrix()
     
     glPushMatrix()
-    glTranslatef(ghost_x, -250 - 80, player_z)  # Same base position using ghost_x
+    glTranslatef(ghost_x, -250 + ghost_y_offset, player_z)  # Same base position using dynamic offset
     
     # Ghost left arm (floating)
     glColor3f(0.8, 0.9, 1.0)  # Same color as body
@@ -187,7 +198,7 @@ def drawGhost():
     glPopMatrix()
     
     glPushMatrix()
-    glTranslatef(ghost_x, -250 - 80, player_z)  # Same base position using ghost_x
+    glTranslatef(ghost_x, -250 + ghost_y_offset, player_z)  # Same base position using dynamic offset
     
     # Ghost right arm (floating)
     glColor3f(0.8, 0.9, 1.0)  # Same color as body
@@ -247,6 +258,15 @@ def keyboardListener(key, x, y):
     elif key == b'f':  # F key for shooting bullets (like reference mouse click)
         if not game_paused and not game_over and not game_won:
             shoot_bullet()
+    elif key == b'c':  # C key for cheat mode toggle
+        global cheat_mode
+        cheat_mode = not cheat_mode
+        if cheat_mode:
+            print("CHEAT MODE ACTIVATED!")
+            print("- Unlimited bullets")
+            print("- Auto dodge obstacles")
+        else:
+            print("CHEAT MODE DEACTIVATED!")
     elif key == b'u':  # U key to force update all obstacle positions
         # forceUpdateAllObstaclePositions()
         print("All obstacles forcefully repositioned!")
@@ -267,7 +287,12 @@ def specialKeyListener(key, x, y):
     """
     Handle special keys (arrow keys) for player left/right movement
     """
-    global player_x
+    global player_x, player_stunned
+    
+    # Don't allow movement if player is stunned
+    if player_stunned:
+        print("Player is stunned and cannot move!")
+        return
     
     # Calculate road boundaries at player level (y = -250)
     # Road width calculation based on perspective effect from drawRoad()
@@ -293,6 +318,68 @@ def specialKeyListener(key, x, y):
     
     glutPostRedisplay()
 
+def auto_dodge_obstacles():
+    """
+    Auto-dodge functionality for cheat mode
+    Automatically moves player or makes player jump to avoid obstacles
+    """
+    global player_x, is_jumping, player_velocity_z
+    
+    # Calculate road boundaries at player level for safe dodging
+    player_y = -250
+    progress = (player_y + 1000) / 2000.0
+    road_left = -250 + progress * 150
+    road_right = 250 - progress * 150
+    padding = 25
+    
+    # Look for incoming obstacles that are close to the player
+    for obstacle in obstacles:
+        if not obstacle['active']:
+            continue
+            
+        obs_x = obstacle['x']
+        obs_y = obstacle['y'] + world_offset
+        
+        # Check if obstacle is approaching (within dodge range)
+        if -350 < obs_y < -200:  # Obstacle is approaching player (y = -250)
+            # Check if obstacle is in player's path
+            if abs(player_x - obs_x) < 40:  # Obstacle is close to player's x position
+                
+                if obstacle['type'] == 'low':
+                    # Auto-jump for low obstacles
+                    if not is_jumping and player_z <= ground_level:
+                        is_jumping = True
+                        player_velocity_z = jump_strength
+                        print("Cheat mode: Auto-jumped over low obstacle!")
+                        
+                elif obstacle['type'] == 'tall':
+                    # Auto-dodge left or right for tall obstacles
+                    # Choose the side that keeps player within road bounds
+                    if player_x > obs_x:
+                        # Player is to the right of obstacle, move further right
+                        new_x = player_x + 50
+                        if new_x <= road_right - padding:
+                            player_x = new_x
+                            print("Cheat mode: Auto-dodged right!")
+                        else:
+                            # Can't go right, go left instead
+                            new_x = player_x - 50
+                            if new_x >= road_left + padding:
+                                player_x = new_x
+                                print("Cheat mode: Auto-dodged left!")
+                    else:
+                        # Player is to the left of obstacle, move further left
+                        new_x = player_x - 50
+                        if new_x >= road_left + padding:
+                            player_x = new_x
+                            print("Cheat mode: Auto-dodged left!")
+                        else:
+                            # Can't go left, go right instead
+                            new_x = player_x + 50
+                            if new_x <= road_right - padding:
+                                player_x = new_x
+                                print("Cheat mode: Auto-dodged right!")
+
   
 
 def animate():
@@ -300,10 +387,11 @@ def animate():
     Animation function to move the world forward (player moving backward effect)
     Also handles player jumping physics and obstacle management
     """
-    global world_offset, player_z, player_velocity_z, is_jumping, score
-    global ghost_x  # Add ghost position to global variables
+    global world_offset, player_z, player_velocity_z, is_jumping, score, player_stunned
+    global game_over, game_won, game_paused  # Add game state variables
+    global ghost_x, ghost_hide_timer, ghost_y_offset, ghost_hidden, ghost_retreat_speed, ghost_target_y_offset, ghost_awakened  # Add ghost variables
     
-    # Don't update game if paused, game over, or won
+    # Don't update game if paused, game over, or won (but continue if player is just stunned)
     if game_paused or game_over or game_won:
         glutPostRedisplay()
         return
@@ -333,17 +421,69 @@ def animate():
     # Handle bullets
     update_bullets()
     
+    # Auto-dodge functionality in cheat mode
+    if cheat_mode:
+        auto_dodge_obstacles()
+    
     # Ghost chasing logic - ghost gradually moves toward player position
-    global ghost_x
-    target_ghost_x = player_x + 30  # Target position is slightly to the side of player
-    if ghost_x < target_ghost_x:
-        ghost_x += ghost_chase_speed
-        if ghost_x > target_ghost_x:  # Don't overshoot
-            ghost_x = target_ghost_x
-    elif ghost_x > target_ghost_x:
-        ghost_x -= ghost_chase_speed
-        if ghost_x < target_ghost_x:  # Don't overshoot
-            ghost_x = target_ghost_x
+    if player_stunned:
+        # When player is stunned, ghost moves directly toward player and also moves forward
+        target_ghost_x = player_x  # Move directly to player's x position
+        ghost_target_y_offset = -20  # Move much closer to player (almost at player's position)
+        
+        # Move ghost horizontally toward player
+        if ghost_x < target_ghost_x:
+            ghost_x += ghost_chase_speed * 2  # Move faster when approaching stunned player
+            if ghost_x > target_ghost_x:
+                ghost_x = target_ghost_x
+        elif ghost_x > target_ghost_x:
+            ghost_x -= ghost_chase_speed * 2
+            if ghost_x < target_ghost_x:
+                ghost_x = target_ghost_x
+        
+        # Move ghost forward (closer in y direction)
+        if ghost_y_offset < ghost_target_y_offset:
+            ghost_y_offset += ghost_retreat_speed * 2  # Move forward faster
+            if ghost_y_offset >= ghost_target_y_offset:
+                ghost_y_offset = ghost_target_y_offset
+                
+        # Check if ghost has reached the player
+        ghost_player_distance = abs(ghost_x - player_x) + abs(ghost_y_offset - (-20))
+        if ghost_player_distance < 20:  # Ghost is very close to player
+            print("The ghost has caught you!")
+            print("GAME OVER!")
+            print(f"Final Score: {score}")
+            game_over = True
+            
+    else:
+        # Normal ghost behavior when player is not stunned
+        target_ghost_x = player_x + 30  # Target position is slightly to the side of player
+        if ghost_x < target_ghost_x:
+            ghost_x += ghost_chase_speed
+            if ghost_x > target_ghost_x:  # Don't overshoot
+                ghost_x = target_ghost_x
+        elif ghost_x > target_ghost_x:
+            ghost_x -= ghost_chase_speed
+            if ghost_x < target_ghost_x:  # Don't overshoot
+                ghost_x = target_ghost_x
+        
+        # Ghost hiding logic - move ghost further back gradually after 3 seconds (only when player not stunned and ghost not awakened)
+        current_time = time.time()
+        if not ghost_hidden and not ghost_awakened and current_time - game_start_time >= 3.0:
+            # Start moving ghost gradually further back
+            ghost_target_y_offset = -300  # Target position far behind
+            ghost_hidden = True
+            print("Ghost is retreating to the shadows...")
+        
+        # Gradually move ghost to target position (only if not awakened)
+        if ghost_hidden and not ghost_awakened and ghost_y_offset > ghost_target_y_offset:
+            ghost_y_offset -= ghost_retreat_speed  # Move back 5 units per frame
+            if ghost_y_offset <= ghost_target_y_offset:
+                ghost_y_offset = ghost_target_y_offset  # Don't overshoot
+                print("Ghost has vanished into the darkness...")
+        elif not ghost_hidden:
+            # Keep ghost close during first 3 seconds
+            ghost_hide_timer = current_time - game_start_time
     
     # Handle obstacles
     spawnObstacles()
@@ -390,7 +530,7 @@ def drawBackground():
 
 def drawRoad():
     """
-    Draw infinite road as one continuous strip using GL_TRIANGLE_STRIP
+    Draw infinite road as one continuous strip using GL_QUADS
     """
     glColor3f(0.3, 0.3, 0.3)  # Road color
     
@@ -401,20 +541,27 @@ def drawRoad():
     # Start road well before visible area and extend well beyond
     start_y = -1000 + (world_offset % segment_length)
     
-    glBegin(GL_TRIANGLE_STRIP)
+    glBegin(GL_QUADS)
     
-    for i in range(road_segments + 1):
-        y = start_y + i * segment_length
+    for i in range(road_segments):
+        y1 = start_y + i * segment_length
+        y2 = start_y + (i + 1) * segment_length
         
-        # Calculate road width at this point (perspective effect)
+        # Calculate road width at both points (perspective effect)
         # Far distance = narrow, close distance = wide
-        progress = (y + 1000) / 2000.0  # 0 to 1 progression
-        left_x = -250 + progress * 150   # Goes from -250 to -100
-        right_x = 250 - progress * 150   # Goes from 250 to 100
+        progress1 = (y1 + 1000) / 2000.0  # 0 to 1 progression
+        progress2 = (y2 + 1000) / 2000.0  # 0 to 1 progression
         
-        # Add two vertices for this cross-section of road
-        glVertex2f(left_x, y)   # Left edge
-        glVertex2f(right_x, y)  # Right edge
+        left_x1 = -250 + progress1 * 150   # Goes from -250 to -100
+        right_x1 = 250 - progress1 * 150   # Goes from 250 to 100
+        left_x2 = -250 + progress2 * 150   # Goes from -250 to -100
+        right_x2 = 250 - progress2 * 150   # Goes from 250 to 100
+        
+        # Draw quad for this road segment
+        glVertex2f(left_x1, y1)   # Bottom left
+        glVertex2f(right_x1, y1)  # Bottom right
+        glVertex2f(right_x2, y2)  # Top right
+        glVertex2f(left_x2, y2)   # Top left
     
     glEnd()
 
@@ -461,11 +608,14 @@ def draw_bullet(bullet):
     glutSolidCube(7)    # Use cube like in reference
     glPopMatrix()
 def shoot_bullet():
-    global bullets, bullet_ammo
-    if bullet_ammo > 0:  # Only shoot if player has ammo
+    global bullets, bullet_ammo, cheat_mode
+    if cheat_mode or bullet_ammo > 0:  # Allow shooting if cheat mode is on OR has ammo
         bullets.append(CBullet(player_x, -250, player_z))  # Use correct player position
-        bullet_ammo -= 1  # Decrease ammo
-        print(f"Bullet fired! Ammo remaining: {bullet_ammo}/5")
+        if not cheat_mode:  # Only decrease ammo if not in cheat mode
+            bullet_ammo -= 1  # Decrease ammo
+            print(f"Bullet fired! Ammo remaining: {bullet_ammo}/5")
+        else:
+            print("Bullet fired! (Cheat mode - unlimited ammo)")
     else:
         print("No ammo! Collect yellow power-ups to get bullets.")
 def update_bullets():
@@ -637,7 +787,8 @@ def checkCollisions():
     """
     Check if player collides with any obstacles (simplified version)
     """
-    global score, player_lives, bullet_ammo, game_over
+    global score, player_lives, bullet_ammo, game_over, low_obstacle_hits
+    global player_stunned, ghost_hidden, ghost_y_offset, ghost_target_y_offset, ghost_awakened  # Add all needed ghost variables
     player_size = 30  # Approximate player size
     
     for obstacle in obstacles:
@@ -655,18 +806,29 @@ def checkCollisions():
                 if obstacle['type'] == 'low':
                     # Low obstacle - check if player is jumping high enough
                     if player_z < 80:  # Not jumping high enough
-                        print("Hit low obstacle! Should have jumped!")
-                        print("GAME OVER!")
-                        print(f"Final Score: {score}")
-                        game_over = True
+                        global low_obstacle_hits, ghost_hidden, ghost_y_offset, ghost_target_y_offset, ghost_awakened
+                        low_obstacle_hits += 1
                         obstacle['active'] = False
+                        
+                        if low_obstacle_hits == 1:
+                            # First hit - bring ghost back to initial position and permanently awaken it
+                            print("Hit low obstacle! Ghost is awakening...")
+                            ghost_hidden = False  # Make ghost visible again
+                            ghost_awakened = True  # Permanently awaken ghost - it won't hide again
+                            ghost_y_offset = -80  # Bring ghost back to initial close position
+                            ghost_target_y_offset = -80  # Set target to close position
+                            print("The ghost has returned from the shadows and will no longer hide!")
+                            
+                        elif low_obstacle_hits >= 2:
+                            # Second hit - stun player and let ghost catch them
+                            print("Hit low obstacle again! Player stunned, ghost is coming for you...")
+                            player_stunned = True  # Stun player
+                            print("You have awakened the ghost's wrath!")
                 elif obstacle['type'] == 'tall':
                     # Tall obstacle - check if player is on ground (not jumping away)
                     if player_z <= ground_level + 10:  # On or near ground
-                        print("Hit tall obstacle! Should have moved left/right!")
-                        print("GAME OVER!")
-                        print(f"Final Score: {score}")
-                        game_over = True
+                        print("Hit tall obstacle! Player stunned, ghost is approaching...")
+                        player_stunned = True  # Stun player, don't end game yet
                         obstacle['active'] = False
                 elif obstacle['type'] == 'power':
                     # Power-up - collect it based on type
@@ -704,7 +866,8 @@ def restart_game():
     global game_over, game_won, score, player_x, player_z, super_power_active, bullets
     global world_offset, player_velocity_z, is_jumping, obstacles
     global player_speed, game_start_time, last_speed_increase_time, move_speed, game_paused
-    global player_lives, bullet_ammo
+    global player_lives, bullet_ammo, player_stunned, low_obstacle_hits  # Add low_obstacle_hits
+    global ghost_x, ghost_y_offset, ghost_hide_timer, ghost_hidden, ghost_target_y_offset, ghost_awakened  # Add ghost variables
     
     game_over = False
     game_won = False
@@ -720,6 +883,16 @@ def restart_game():
     game_paused = False
     player_lives = 3  # Reset lives
     bullet_ammo = 0   # Reset ammo
+    player_stunned = False  # Reset stunned state
+    low_obstacle_hits = 0  # Reset low obstacle hit counter
+    
+    # Reset ghost to initial position
+    ghost_x = 30.0
+    ghost_y_offset = -80  # Start close to player
+    ghost_hide_timer = 0.0
+    ghost_hidden = False
+    ghost_awakened = False  # Reset awakened state
+    ghost_target_y_offset = -80  # Reset target position
     
     # Reset speed progression
     player_speed = initial_speed
@@ -890,8 +1063,6 @@ def display():
               look_x, look_y, look_z,          # Look at center
               0, 0, 1)                         # Up vector
     
-    # Enable depth testing for 3D
-    glEnable(GL_DEPTH_TEST)
     for bullet in bullets:
         draw_bullet(bullet)
     # Draw road
@@ -922,7 +1093,9 @@ def display():
     
     # Print status info periodically
     if score % 50 == 0 or bullet_ammo != getattr(display, 'last_ammo', 0):
-        print(f"Score: {score} | Lives: {player_lives} | Ammo: {bullet_ammo}/5")
+        cheat_status = " | CHEAT MODE ON" if cheat_mode else ""
+        ammo_display = "∞" if cheat_mode else f"{bullet_ammo}/5"
+        print(f"Score: {score} | Lives: {player_lives} | Ammo: {ammo_display}{cheat_status}")
         display.last_ammo = bullet_ammo
     
     glutSwapBuffers()
