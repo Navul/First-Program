@@ -43,7 +43,13 @@ bullets = []
 move_speed = 2.0
 player_lives = 3  # Player starts with 3 lives
 bullet_ammo = 0  # Player starts with 0 bullets
-max_ammo = 5  # Maximum bullets player can carry
+max_ammo = 5 # Maximum bullets player can carry
+shot_speed = 10  # Bullet movement speed
+player_pos=[0,20,0]
+
+# Ghost variables for chasing behavior
+ghost_x = 30.0  # Ghost's independent x position
+ghost_chase_speed = 1.0  # How fast ghost chases player
 
 # Obstacles - Three types
 power_ups = []  # Power-ups that give benefits when collected
@@ -52,6 +58,21 @@ full_obstacles = []  # Tall obstacles that must be avoided by moving left/right
 obstacles = []  # Original obstacle system for compatibility
 obstacle_spawn_timer = 0
 obstacle_spawn_interval = 90  # Spawn obstacle every 90 frames
+class CBullet:
+    def __init__(self, x, y, z):
+        self.loc = [x, y + 20, z]  # Start slightly ahead of player
+        self.dir = [0, 1, 0]  # Move forward along Y-axis (road direction)
+        self.active = True
+         
+    def update_position(self):
+        if self.active:
+            self.loc[0] += self.dir[0] * shot_speed
+            self.loc[1] += self.dir[1] * shot_speed  # Move forward along road
+            self.loc[2] += self.dir[2] * shot_speed
+            
+            # Deactivate bullets that go too far ahead
+            if self.loc[1] > 200:  # Remove when bullets get ahead of visible area
+                self.active = False
 
 def drawPlayer():
     """
@@ -110,6 +131,51 @@ def drawPlayer():
     
     glPopMatrix()
 
+def drawGhost():
+    """
+    Draw a ghost behind the main player using only allowed OpenGL functions.
+    Ghost is positioned behind the player to appear as if chasing.
+    """
+    glPushMatrix()
+    # Position ghost behind player using independent ghost_x position
+    glTranslatef(ghost_x, -250 - 80, player_z)  # Use ghost_x instead of player_x + 30
+    
+    # Ghost body (semi-transparent white/light blue)
+    glColor3f(0.8, 0.9, 1.0)  # Light blue-white color
+    glTranslatef(0, 0, 30)  # Raise body up
+    glScalef(18, 12, 35)  # Scale to make ghost body shape
+    glutSolidCube(1)
+    glPopMatrix()
+    
+    glPushMatrix()
+    glTranslatef(ghost_x, -250 - 80, player_z)  # Same base position using ghost_x
+    
+    # Ghost head (white sphere)
+    glColor3f(1.0, 1.0, 1.0)  # Pure white for head
+    glTranslatef(0, 0, 55)  # Position above body
+    glutSolidSphere(10, 15, 15)  # Slightly smaller than player head
+    glPopMatrix()
+    
+    glPushMatrix()
+    glTranslatef(ghost_x, -250 - 80, player_z)  # Same base position using ghost_x
+    
+    # Ghost left arm (floating)
+    glColor3f(0.8, 0.9, 1.0)  # Same color as body
+    glTranslatef(-12, 0, 20)  # Position to left side
+    glScalef(6, 6, 20)  # Scale to arm shape
+    glutSolidCube(1)
+    glPopMatrix()
+    
+    glPushMatrix()
+    glTranslatef(ghost_x, -250 - 80, player_z)  # Same base position using ghost_x
+    
+    # Ghost right arm (floating)
+    glColor3f(0.8, 0.9, 1.0)  # Same color as body
+    glTranslatef(12, 0, 20)  # Position to right side
+    glScalef(6, 6, 20)  # Scale to arm shape
+    glutSolidCube(1)
+    glPopMatrix()
+
 def keyboardListener(key, x, y):
     """
     Handle keyboard input for camera movement
@@ -152,21 +218,15 @@ def keyboardListener(key, x, y):
             print("Game PAUSED - Press SPACE to resume")
         else:
             print("Game RESUMED")
-    elif key == b'j':  # J key for jumping (moved from space)
+    elif key == b'j':  # J key for jumping
         if not game_paused and not game_over and not game_won:
-            if super_power_active:
-                # Shoot bullet
-                bullets.append({
-                    'x': player_x,
-                    'y': -250,  # Start at player position
-                    'z': player_z + 10,  # Slightly above player
-                    'active': True
-                })
-                print("Bullet fired!")
-            elif not is_jumping:  # Jump if not in super power mode
+            if not is_jumping:  # Jump
                 is_jumping = True
                 player_velocity_z = jump_strength
                 print("Player jumped!")
+    elif key == b'f':  # F key for shooting bullets (like reference mouse click)
+        if not game_paused and not game_over and not game_won:
+            shoot_bullet()
     elif key == b'u':  # U key to force update all obstacle positions
         # forceUpdateAllObstaclePositions()
         print("All obstacles forcefully repositioned!")
@@ -189,17 +249,26 @@ def specialKeyListener(key, x, y):
     """
     global player_x
     
+    # Calculate road boundaries at player level (y = -250)
+    # Road width calculation based on perspective effect from drawRoad()
+    player_y = -250
+    progress = (player_y + 1000) / 2000.0  # 0 to 1 progression
+    road_left = -250 + progress * 150   # Left boundary at player level
+    road_right = 250 - progress * 150   # Right boundary at player level
+    
     if key == GLUT_KEY_LEFT:  # Move player left
         player_x -= 15
-        # Keep player within border bounds
-        if player_x < X_MIN + 20:  # Add some padding from the border
-            player_x = X_MIN + 20
+        # Keep player within road bounds with padding
+        padding = 25  # Keep player away from road edges
+        if player_x < road_left + padding:
+            player_x = road_left + padding
         print("Player moved left")
     elif key == GLUT_KEY_RIGHT:  # Move player right
         player_x += 15
-        # Keep player within border bounds
-        if player_x > X_MAX - 20:  # Add some padding from the border
-            player_x = X_MAX - 20
+        # Keep player within road bounds with padding
+        padding = 25  # Keep player away from road edges
+        if player_x > road_right - padding:
+            player_x = road_right - padding
         print("Player moved right")
     
     glutPostRedisplay()
@@ -212,6 +281,7 @@ def animate():
     Also handles player jumping physics and obstacle management
     """
     global world_offset, player_z, player_velocity_z, is_jumping, score
+    global ghost_x  # Add ghost position to global variables
     
     # Don't update game if paused, game over, or won
     if game_paused or game_over or game_won:
@@ -239,6 +309,22 @@ def animate():
             player_z = ground_level  # Set to ground level
             player_velocity_z = 0.0  # Stop vertical movement
             is_jumping = False  # Player is no longer jumping
+    
+<<<<<<< HEAD
+    # Handle bullets (ADD THIS)
+    update_bullets()
+=======
+    # Ghost chasing logic - ghost gradually moves toward player position
+    target_ghost_x = player_x + 30  # Target position is slightly to the side of player
+    if ghost_x < target_ghost_x:
+        ghost_x += ghost_chase_speed
+        if ghost_x > target_ghost_x:  # Don't overshoot
+            ghost_x = target_ghost_x
+    elif ghost_x > target_ghost_x:
+        ghost_x -= ghost_chase_speed
+        if ghost_x < target_ghost_x:  # Don't overshoot
+            ghost_x = target_ghost_x
+>>>>>>> aa22fc7be7fdb1b6952a8b1756b6fbbbe6f94fe4
     
     # Handle obstacles
     spawnObstacles()
@@ -346,8 +432,77 @@ def drawRoadMarkings():
         glEnd()
 
 
+def draw_bullet(bullet):
+    if not bullet.active:
+        return
+        
+    glPushMatrix()
+    glTranslatef(bullet.loc[0], bullet.loc[1], bullet.loc[2])
+    glColor3f(1, 0, 0)  # Red bullets like in reference
+    glutSolidCube(7)    # Use cube like in reference
+    glPopMatrix()
+def shoot_bullet():
+    global bullets, bullet_ammo
+    if bullet_ammo > 0:  # Only shoot if player has ammo
+        bullets.append(CBullet(player_x, -250, player_z))  # Use correct player position
+        bullet_ammo -= 1  # Decrease ammo
+        print(f"Bullet fired! Ammo remaining: {bullet_ammo}/5")
+    else:
+        print("No ammo! Collect yellow power-ups to get bullets.")
+def update_bullets():
+    global bullets, score
+    
+    # Update bullet positions
+    for bullet in bullets:
+        if bullet.active:
+            bullet.update_position()
+    
+    # Check collisions
+    check_bullet_hits()
+    
+    # Remove inactive bullets (like reference does)
+    bullets = [b for b in bullets if b.active]
 
-
+def check_bullet_hits():
+    """Check if bullets hit obstacles - similar to reference check_hits()"""
+    global score
+    
+    for bullet in bullets[:]:  # Use slice copy like reference
+        if not bullet.active:
+            continue
+            
+        for obstacle in obstacles[:]:  # Check against obstacles
+            if not obstacle['active']:
+                continue
+                
+            # Calculate distance between bullet and obstacle
+            bx, by, bz = bullet.loc
+            ox = obstacle['x']
+            oy = obstacle['y'] + world_offset
+            oz = 25  # Approximate obstacle height
+            
+            # Use distance calculation like reference
+            distance = ((bx - ox)**2 + (by - oy)**2 + (bz - oz)**2)**0.5
+            
+            if distance < 40:  # Collision threshold
+                if obstacle['type'] == 'tall' or obstacle['type'] == 'low':
+                    # Destroy obstacle and bullet
+                    obstacle['active'] = False
+                    bullet.active = False
+                    
+                    # Add score for destroying obstacle
+                    if obstacle['type'] == 'low':
+                        score += 5
+                        print("Bullet destroyed low obstacle! +5 score")
+                    elif obstacle['type'] == 'tall':
+                        score += 10
+                        print("Bullet destroyed tall obstacle! +10 score")
+                    
+                    break  # Exit obstacle loop for this bullet
+        
+        # Remove bullets that go out of bounds (like reference)
+        if abs(bullet.loc[0]) > X_MAX or bullet.loc[1] > Y_MAX:
+            bullet.active = False
 
 def createObstacle(obstacle_type, x_position):
     """
@@ -424,9 +579,16 @@ def spawnObstacles():
         # Randomly choose obstacle type
         obstacle_type = random.choice(['low', 'tall','power'])
         
-        # Random x position across the full width of the road
-        # Road width goes from approximately -200 to +200 at player level
-        x_position = random.randint(-180, 180)  # Random position across road width
+        # Calculate road boundaries at player level (y = -250)
+        # Road width calculation based on perspective effect from drawRoad()
+        player_y = -250
+        progress = (player_y + 1000) / 2000.0  # 0 to 1 progression
+        road_left = -250 + progress * 150   # Left boundary at player level
+        road_right = 250 - progress * 150   # Right boundary at player level
+        
+        # Random x position within road boundaries with some padding
+        padding = 20  # Keep obstacles away from road edges
+        x_position = random.randint(int(road_left + padding), int(road_right - padding))
         
         # Create and add obstacle
         new_obstacle = createObstacle(obstacle_type, x_position)
@@ -456,7 +618,7 @@ def checkCollisions():
     """
     Check if player collides with any obstacles (simplified version)
     """
-    global score, player_lives, bullet_ammo
+    global score, player_lives, bullet_ammo, game_over
     player_size = 30  # Approximate player size
     
     for obstacle in obstacles:
@@ -475,11 +637,17 @@ def checkCollisions():
                     # Low obstacle - check if player is jumping high enough
                     if player_z < 80:  # Not jumping high enough
                         print("Hit low obstacle! Should have jumped!")
+                        print("GAME OVER!")
+                        print(f"Final Score: {score}")
+                        game_over = True
                         obstacle['active'] = False
                 elif obstacle['type'] == 'tall':
                     # Tall obstacle - check if player is on ground (not jumping away)
                     if player_z <= ground_level + 10:  # On or near ground
                         print("Hit tall obstacle! Should have moved left/right!")
+                        print("GAME OVER!")
+                        print(f"Final Score: {score}")
+                        game_over = True
                         obstacle['active'] = False
                 elif obstacle['type'] == 'power':
                     # Power-up - collect it based on type
@@ -514,29 +682,30 @@ def restart_game():
     global game_over, game_won, score, player_x, player_z, super_power_active, bullets
     global world_offset, player_velocity_z, is_jumping, obstacles
     global player_speed, game_start_time, last_speed_increase_time, move_speed, game_paused
+    global player_lives, bullet_ammo
     
     game_over = False
     game_won = False
     score = 0
-    player_x = 0.0  # Reset player position
-    player_z = ground_level  # Reset to ground level
+    player_x = 0.0
+    player_z = ground_level
     player_velocity_z = 0.0
     is_jumping = False
-    world_offset = 0.0  # Reset world movement
+    world_offset = 0.0
     super_power_active = False
-    bullets = []
-    obstacles = []  # Reset old-style obstacles
-    game_paused = False  # Unpause game on restart
+    bullets = []  # Clear all bullets
+    obstacles = []
+    game_paused = False
+    player_lives = 3  # Reset lives
+    bullet_ammo = 0   # Reset ammo
     
     # Reset speed progression
     player_speed = initial_speed
     move_speed = initial_speed
-    game_start_time = time.time()  # Reset game timer
+    game_start_time = time.time()
     last_speed_increase_time = game_start_time
     
-    # Reinitialize all obstacles
-
-    print(f"Game restarted! Starting speed: {player_speed}")
+    print(f"Game restarted! Lives: {player_lives}, Ammo: {bullet_ammo}/5")
 
 def check_super_power_activation():
     """
@@ -701,7 +870,8 @@ def display():
     
     # Enable depth testing for 3D
     glEnable(GL_DEPTH_TEST)
-    
+    for bullet in bullets:
+        draw_bullet(bullet)
     # Draw road
     drawRoad()
     # Draw road markings for animation visibility
@@ -717,7 +887,14 @@ def display():
     # Draw 3D player in middle of road (player stays at center)
     drawPlayer()
     
+<<<<<<< HEAD
+    # Display game status
+=======
+    # Draw ghost chasing the player
+    drawGhost()
+    
     # Display game state messages
+>>>>>>> aa22fc7be7fdb1b6952a8b1756b6fbbbe6f94fe4
     if game_over:
         draw_text(400, 400, "GAME OVER! Press R to restart")
     elif game_won:
@@ -725,12 +902,10 @@ def display():
     elif game_paused:
         draw_text(400, 400, "PAUSED - Press P to resume")
     
-    if super_power_active:
-        draw_text(10, 740, "SUPER POWER ACTIVE! Press SPACE to shoot")
-    
-
-   # Only print every 50 points
-    print(f"Score: {score}")
+    # Print status info periodically
+    if score % 50 == 0 or bullet_ammo != getattr(display, 'last_ammo', 0):
+        print(f"Score: {score} | Lives: {player_lives} | Ammo: {bullet_ammo}/5")
+        display.last_ammo = bullet_ammo
     
     glutSwapBuffers()
 
