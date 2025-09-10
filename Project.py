@@ -398,7 +398,6 @@ def specialKeyListener(key, x, y):
     
     glutPostRedisplay()
 
-<<<<<<< HEAD
 def auto_dodge_obstacles():
     """
     Auto-dodge functionality for cheat mode
@@ -460,74 +459,6 @@ def auto_dodge_obstacles():
                             if new_x <= road_right - padding:
                                 player_x = new_x
                                 print("Cheat mode: Auto-dodged right!")
-
-  
-=======
-def updateUFO():
-    """
-    Update UFO behavior: spawning, movement, and shooting
-    """
-    global ufo_active, ufo_spawn_timer, ufo_x, ufo_z, ufo_bullet_timer, game_over
-    
-    # UFO spawning logic
-    ufo_spawn_timer += 1
-    
-    if not ufo_active and ufo_spawn_timer >= ufo_spawn_interval:
-        # Spawn UFO at random position
-        ufo_active = True
-        ufo_x = random.uniform(X_MIN + 5, X_MAX - 5)  # Random x position across road
-        ufo_z = -100  # Start ahead of player (in front)
-        ufo_spawn_timer = 0
-        print("UFO appeared in the sky!")
-    
-    if ufo_active:
-        # Move UFO slowly toward player
-        ufo_z += 3  # Move toward player
-        
-        # UFO shooting logic
-        ufo_bullet_timer += 1
-        if ufo_bullet_timer >= ufo_bullet_interval:
-            # UFO shoots at player (bullet starts at UFO position)
-            ufo_bullets.append(CUFOBullet(ufo_x, 25.0, ufo_z))  # Start at UFO height
-            ufo_bullet_timer = 0
-            print("UFO fired a bullet!")
-        
-        # Remove UFO when it goes too far behind player
-        if ufo_z > 200:
-            ufo_active = False
-            print("UFO disappeared")
-    
-    # Update UFO bullets
-    for bullet in ufo_bullets[:]:  # Use slice to avoid modification during iteration
-        if bullet.active:
-            bullet.update_position()
-            
-            # Check collision with player
-            dx = bullet.loc[0] - player_x
-            dy = bullet.loc[1] - (-250)  # Player is at y = -250
-            dz = bullet.loc[2] - player_z
-            distance = (dx**2 + dy**2 + dz**2)**0.5
-            
-            if distance < 30:  # Collision threshold
-                if silver_power_count > 0:
-                    print(f"UFO bullet hit but PROTECTED by silver power! ({silver_power_count-1} remaining)")
-                    score += 15  # Bonus points for surviving UFO attack with silver power
-                    silver_power_count -= 1  # Use one silver power
-                    bullet.active = False
-                else:
-                    print("UFO bullet hit player! GAME OVER!")
-                    print("================================================")
-                    print("                GAME OVER!")
-                    print(f"              FINAL SCORE: {score}")
-                    print("      Press 'R' to restart the game")
-                    print("================================================")
-                    game_over = True
-                    bullet.active = False
-        
-        # Remove inactive bullets
-        if not bullet.active:
-            ufo_bullets.remove(bullet)
->>>>>>> f3e477cf980c6a43f5c9188fbf9ef8a0707a88d4
 
 def animate():
     """
@@ -631,9 +562,6 @@ def animate():
         elif not ghost_hidden:
             # Keep ghost close during first 3 seconds
             ghost_hide_timer = current_time - game_start_time
-    
-    # Handle UFO system
-    updateUFO()
     
     # Handle obstacles
     spawnObstacles()
@@ -937,12 +865,8 @@ def checkCollisions():
     """
     Check if player collides with any obstacles (simplified version)
     """
-<<<<<<< HEAD
     global score, player_lives, bullet_ammo, game_over, low_obstacle_hits
     global player_stunned, ghost_hidden, ghost_y_offset, ghost_target_y_offset, ghost_awakened  # Add all needed ghost variables
-=======
-    global score, player_lives, bullet_ammo, game_over, silver_power_count
->>>>>>> f3e477cf980c6a43f5c9188fbf9ef8a0707a88d4
     player_size = 30  # Approximate player size
     
     for obstacle in obstacles:
@@ -960,8 +884,6 @@ def checkCollisions():
                 if obstacle['type'] == 'low':
                     # Low obstacle - check if player is jumping high enough
                     if player_z < 80:  # Not jumping high enough
-<<<<<<< HEAD
-                        global low_obstacle_hits, ghost_hidden, ghost_y_offset, ghost_target_y_offset, ghost_awakened
                         low_obstacle_hits += 1
                         obstacle['active'] = False
                         
@@ -985,39 +907,6 @@ def checkCollisions():
                         print("Hit tall obstacle! Player stunned, ghost is approaching...")
                         player_stunned = True  # Stun player, don't end game yet
                         obstacle['active'] = False
-=======
-                        if silver_power_count > 0:
-                            print(f"Hit low obstacle but PROTECTED by silver power! ({silver_power_count-1} remaining)")
-                            score += 10  # Bonus points for surviving with silver power
-                            silver_power_count -= 1  # Use one silver power
-                            obstacle['active'] = False
-                        else:
-                            print("Hit low obstacle! Should have jumped!")
-                            print("================================================")
-                            print("                GAME OVER!")
-                            print(f"              FINAL SCORE: {score}")
-                            print("      Press 'R' to restart the game")
-                            print("================================================")
-                            game_over = True
-                            obstacle['active'] = False
-                elif obstacle['type'] == 'tall':
-                    # Tall obstacle - check if player is on ground (not jumping away)
-                    if player_z <= ground_level + 10:  # On or near ground
-                        if silver_power_count > 0:
-                            print(f"Hit tall obstacle but PROTECTED by silver power! ({silver_power_count-1} remaining)")
-                            score += 10  # Bonus points for surviving with silver power
-                            silver_power_count -= 1  # Use one silver power
-                            obstacle['active'] = False
-                        else:
-                            print("Hit tall obstacle! Should have moved left/right!")
-                            print("================================================")
-                            print("                GAME OVER!")
-                            print(f"              FINAL SCORE: {score}")
-                            print("      Press 'R' to restart the game")
-                            print("================================================")
-                            game_over = True
-                            obstacle['active'] = False
->>>>>>> f3e477cf980c6a43f5c9188fbf9ef8a0707a88d4
                 elif obstacle['type'] == 'power':
                     # Power-up - collect it based on type
                     obstacle['active'] = False
@@ -1064,12 +953,8 @@ def restart_game():
     global game_over, game_won, score, player_x, player_z, super_power_active, bullets
     global world_offset, player_velocity_z, is_jumping, obstacles
     global player_speed, game_start_time, last_speed_increase_time, move_speed, game_paused
-<<<<<<< HEAD
     global player_lives, bullet_ammo, player_stunned, low_obstacle_hits  # Add low_obstacle_hits
     global ghost_x, ghost_y_offset, ghost_hide_timer, ghost_hidden, ghost_target_y_offset, ghost_awakened  # Add ghost variables
-=======
-    global player_lives, bullet_ammo, silver_power_count
->>>>>>> f3e477cf980c6a43f5c9188fbf9ef8a0707a88d4
     
     game_over = False
     game_won = False
@@ -1311,21 +1196,11 @@ def display():
     elif game_paused:
         draw_text(400, 400, "PAUSED - Press P to resume")
     
-<<<<<<< HEAD
     # Print status info periodically
     if score % 50 == 0 or bullet_ammo != getattr(display, 'last_ammo', 0):
         cheat_status = " | CHEAT MODE ON" if cheat_mode else ""
         ammo_display = "∞" if cheat_mode else f"{bullet_ammo}/5"
         print(f"Score: {score} | Lives: {player_lives} | Ammo: {ammo_display}{cheat_status}")
-=======
-    # Display silver power status when player has power-ups
-    if silver_power_count > 0:
-        draw_text(400, 500, f"SILVER PROTECTION: {silver_power_count}/{max_silver_power}")
-    
-    # Print status info more frequently
-    if score % 25 == 0 or bullet_ammo != getattr(display, 'last_ammo', 0) or score != getattr(display, 'last_score', 0):
-        print(f"Score: {score} | Lives: {player_lives} | Ammo: {bullet_ammo}/5 | Silver: {silver_power_count}/{max_silver_power}")
->>>>>>> f3e477cf980c6a43f5c9188fbf9ef8a0707a88d4
         display.last_ammo = bullet_ammo
         display.last_score = score
     
