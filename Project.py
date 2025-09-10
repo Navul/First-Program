@@ -661,8 +661,11 @@ def checkCollisions():
                             print("Collected GREEN power-up! +20 score!")
                         elif obstacle['subtype'] == 'silver':
                             # Silver power-up gives extra life
+                          if player_lives<3:  
                             player_lives += 1
                             print(f"Collected SILVER power-up! Extra life! Lives: {player_lives}")
+                          else:
+                            print("Collected SILVER power-up! Already at max lives (3)")  
                         elif obstacle['subtype'] == 'yellow':
                             # Yellow power-up gives ammo (max 5 bullets)
                             if bullet_ammo < 5:
