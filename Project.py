@@ -43,16 +43,13 @@ bullets = []
 move_speed = 2.0
 player_lives = 3  # Player starts with 3 lives
 bullet_ammo = 0  # Player starts with 0 bullets
-max_ammo = 5 # Maximum bullets player can carry
+max_ammo = 5  # Maximum bullets player can carry
 shot_speed = 10  # Bullet movement speed
-player_pos=[0,20,0]
-<<<<<<< HEAD
-=======
+player_pos = [0, 20, 0]
 
 # Ghost variables for chasing behavior
 ghost_x = 30.0  # Ghost's independent x position
 ghost_chase_speed = 1.0  # How fast ghost chases player
->>>>>>> 76d4bd2af3d577945a910a0524ed007082a53143
 
 # Obstacles - Three types
 power_ups = []  # Power-ups that give benefits when collected
@@ -313,15 +310,11 @@ def animate():
             player_velocity_z = 0.0  # Stop vertical movement
             is_jumping = False  # Player is no longer jumping
     
-<<<<<<< HEAD
-    # Handle bullets (ADD THIS)
+    # Handle bullets
     update_bullets()
-=======
-<<<<<<< HEAD
-    # Handle bullets (ADD THIS)
-    update_bullets()
-=======
+    
     # Ghost chasing logic - ghost gradually moves toward player position
+    global ghost_x
     target_ghost_x = player_x + 30  # Target position is slightly to the side of player
     if ghost_x < target_ghost_x:
         ghost_x += ghost_chase_speed
@@ -331,8 +324,6 @@ def animate():
         ghost_x -= ghost_chase_speed
         if ghost_x < target_ghost_x:  # Don't overshoot
             ghost_x = target_ghost_x
->>>>>>> aa22fc7be7fdb1b6952a8b1756b6fbbbe6f94fe4
->>>>>>> 76d4bd2af3d577945a910a0524ed007082a53143
     
     # Handle obstacles
     spawnObstacles()
@@ -895,18 +886,10 @@ def display():
     # Draw 3D player in middle of road (player stays at center)
     drawPlayer()
     
-<<<<<<< HEAD
-    # Display game status
-=======
-<<<<<<< HEAD
-    # Display game status
-=======
     # Draw ghost chasing the player
     drawGhost()
     
     # Display game state messages
->>>>>>> aa22fc7be7fdb1b6952a8b1756b6fbbbe6f94fe4
->>>>>>> 76d4bd2af3d577945a910a0524ed007082a53143
     if game_over:
         draw_text(400, 400, "GAME OVER! Press R to restart")
     elif game_won:
