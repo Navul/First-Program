@@ -47,10 +47,6 @@ max_ammo = 5 # Maximum bullets player can carry
 shot_speed = 10  # Bullet movement speed
 player_pos=[0,20,0]
 
-# Ghost variables for chasing behavior
-ghost_x = 30.0  # Ghost's independent x position
-ghost_chase_speed = 1.0  # How fast ghost chases player
-
 # Obstacles - Three types
 power_ups = []  # Power-ups that give benefits when collected
 ground_obstacles = []  # Low obstacles that must be jumped over
@@ -131,51 +127,6 @@ def drawPlayer():
     
     glPopMatrix()
 
-def drawGhost():
-    """
-    Draw a ghost behind the main player using only allowed OpenGL functions.
-    Ghost is positioned behind the player to appear as if chasing.
-    """
-    glPushMatrix()
-    # Position ghost behind player using independent ghost_x position
-    glTranslatef(ghost_x, -250 - 80, player_z)  # Use ghost_x instead of player_x + 30
-    
-    # Ghost body (semi-transparent white/light blue)
-    glColor3f(0.8, 0.9, 1.0)  # Light blue-white color
-    glTranslatef(0, 0, 30)  # Raise body up
-    glScalef(18, 12, 35)  # Scale to make ghost body shape
-    glutSolidCube(1)
-    glPopMatrix()
-    
-    glPushMatrix()
-    glTranslatef(ghost_x, -250 - 80, player_z)  # Same base position using ghost_x
-    
-    # Ghost head (white sphere)
-    glColor3f(1.0, 1.0, 1.0)  # Pure white for head
-    glTranslatef(0, 0, 55)  # Position above body
-    glutSolidSphere(10, 15, 15)  # Slightly smaller than player head
-    glPopMatrix()
-    
-    glPushMatrix()
-    glTranslatef(ghost_x, -250 - 80, player_z)  # Same base position using ghost_x
-    
-    # Ghost left arm (floating)
-    glColor3f(0.8, 0.9, 1.0)  # Same color as body
-    glTranslatef(-12, 0, 20)  # Position to left side
-    glScalef(6, 6, 20)  # Scale to arm shape
-    glutSolidCube(1)
-    glPopMatrix()
-    
-    glPushMatrix()
-    glTranslatef(ghost_x, -250 - 80, player_z)  # Same base position using ghost_x
-    
-    # Ghost right arm (floating)
-    glColor3f(0.8, 0.9, 1.0)  # Same color as body
-    glTranslatef(12, 0, 20)  # Position to right side
-    glScalef(6, 6, 20)  # Scale to arm shape
-    glutSolidCube(1)
-    glPopMatrix()
-
 def keyboardListener(key, x, y):
     """
     Handle keyboard input for camera movement
@@ -249,26 +200,17 @@ def specialKeyListener(key, x, y):
     """
     global player_x
     
-    # Calculate road boundaries at player level (y = -250)
-    # Road width calculation based on perspective effect from drawRoad()
-    player_y = -250
-    progress = (player_y + 1000) / 2000.0  # 0 to 1 progression
-    road_left = -250 + progress * 150   # Left boundary at player level
-    road_right = 250 - progress * 150   # Right boundary at player level
-    
     if key == GLUT_KEY_LEFT:  # Move player left
         player_x -= 15
-        # Keep player within road bounds with padding
-        padding = 25  # Keep player away from road edges
-        if player_x < road_left + padding:
-            player_x = road_left + padding
+        # Keep player within border bounds
+        if player_x < X_MIN + 20:  # Add some padding from the border
+            player_x = X_MIN + 20
         print("Player moved left")
     elif key == GLUT_KEY_RIGHT:  # Move player right
         player_x += 15
-        # Keep player within road bounds with padding
-        padding = 25  # Keep player away from road edges
-        if player_x > road_right - padding:
-            player_x = road_right - padding
+        # Keep player within border bounds
+        if player_x > X_MAX - 20:  # Add some padding from the border
+            player_x = X_MAX - 20
         print("Player moved right")
     
     glutPostRedisplay()
@@ -281,7 +223,6 @@ def animate():
     Also handles player jumping physics and obstacle management
     """
     global world_offset, player_z, player_velocity_z, is_jumping, score
-    global ghost_x  # Add ghost position to global variables
     
     # Don't update game if paused, game over, or won
     if game_paused or game_over or game_won:
@@ -310,21 +251,8 @@ def animate():
             player_velocity_z = 0.0  # Stop vertical movement
             is_jumping = False  # Player is no longer jumping
     
-<<<<<<< HEAD
     # Handle bullets (ADD THIS)
     update_bullets()
-=======
-    # Ghost chasing logic - ghost gradually moves toward player position
-    target_ghost_x = player_x + 30  # Target position is slightly to the side of player
-    if ghost_x < target_ghost_x:
-        ghost_x += ghost_chase_speed
-        if ghost_x > target_ghost_x:  # Don't overshoot
-            ghost_x = target_ghost_x
-    elif ghost_x > target_ghost_x:
-        ghost_x -= ghost_chase_speed
-        if ghost_x < target_ghost_x:  # Don't overshoot
-            ghost_x = target_ghost_x
->>>>>>> aa22fc7be7fdb1b6952a8b1756b6fbbbe6f94fe4
     
     # Handle obstacles
     spawnObstacles()
@@ -579,16 +507,9 @@ def spawnObstacles():
         # Randomly choose obstacle type
         obstacle_type = random.choice(['low', 'tall','power'])
         
-        # Calculate road boundaries at player level (y = -250)
-        # Road width calculation based on perspective effect from drawRoad()
-        player_y = -250
-        progress = (player_y + 1000) / 2000.0  # 0 to 1 progression
-        road_left = -250 + progress * 150   # Left boundary at player level
-        road_right = 250 - progress * 150   # Right boundary at player level
-        
-        # Random x position within road boundaries with some padding
-        padding = 20  # Keep obstacles away from road edges
-        x_position = random.randint(int(road_left + padding), int(road_right - padding))
+        # Random x position across the full width of the road
+        # Road width goes from approximately -200 to +200 at player level
+        x_position = random.randint(-180, 180)  # Random position across road width
         
         # Create and add obstacle
         new_obstacle = createObstacle(obstacle_type, x_position)
@@ -887,14 +808,7 @@ def display():
     # Draw 3D player in middle of road (player stays at center)
     drawPlayer()
     
-<<<<<<< HEAD
     # Display game status
-=======
-    # Draw ghost chasing the player
-    drawGhost()
-    
-    # Display game state messages
->>>>>>> aa22fc7be7fdb1b6952a8b1756b6fbbbe6f94fe4
     if game_over:
         draw_text(400, 400, "GAME OVER! Press R to restart")
     elif game_won:
