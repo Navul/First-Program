@@ -90,3 +90,7 @@ Starting Speed: 2.0 units/second
 Speed Increase: +0.5 every 10 seconds
 Maximum Speed: 8.0 units/second (reached after 2 minutes)
 Difficulty Scaling: More obstacles spawn at higher speeds
+
+
+
+
